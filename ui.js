@@ -8,7 +8,7 @@
   // canvas geometry: y-axis labels on the left, action area on top, plot below
   const X0 = 40, CW = 8, AY = 6, AH = 22, YT = 38, PH = 396, YB = YT + PH;
 
-  let key = "warmup", seed = 1, inst = null, game = null, bench = null, cursor = 0, lastI = -1;
+  let key = "warmup", seed = 1, inst = null, game = null, bench = null, lastI = -1;
 
   function readHash() {
     const m = /^#(warmup|s[1-4])-(\d+)$/.exec(location.hash);
@@ -26,30 +26,17 @@
     render();
   }
 
-  const mode = () => $("mode").value;
-  function start() { return mode() === "schedule" ? cursor : game.pos; }
+  function start() { return game.pos; }
   function flash(t) { $("msg").textContent = t; }
 
   function act(name, shift) {
     if (!game || game.done) return;
-    const [lo, hi] = game.window();
-    if (mode() === "movement") {
-      if (name === "left" || name === "right") {
-        if (!game.legalActions().some(a => a[0] === name)) { flash("The block is at the edge of its window."); return; }
-        game.step([name]);
-      } else if (name === "down") {
-        if (!game.fits(game.pos)) { flash("Over capacity here: move the block."); return; }
-        game.step(["down"]);
-      }
-    } else {
-      if (name === "left") cursor = Math.max(lo, cursor - (shift ? 4 : 1));
-      else if (name === "right") cursor = Math.min(hi, cursor + (shift ? 4 : 1));
-      else if (name === "home") cursor = lo;
-      else if (name === "end") cursor = hi;
-      else if (name === "down") {
-        if (!game.fits(cursor)) { flash("Over capacity here: choose another start."); return; }
-        game.step(["schedule", cursor]);
-      }
+    if (name === "left" || name === "right") {
+      if (!game.legalActions().some(a => a[0] === name)) { flash("The block is at the edge of its window."); return; }
+      game.step([name]);
+    } else if (name === "down") {
+      if (!game.fits(game.pos)) { flash("Over capacity here: move the block."); return; }
+      game.step(["down"]);
     }
     render();
   }
@@ -59,7 +46,7 @@
   const xs = j => X0 + j * CW;
 
   function render() {
-    if (game.i !== lastI) { lastI = game.i; if (!game.done) cursor = game.pos; }
+    if (game.i !== lastI) lastI = game.i;
     const ctx = board.getContext("2d"), cap = inst.cap, rh = PH / cap;
     const col = { bg: css("--bg"), fg: css("--fg"), muted: css("--muted"), line: css("--line"), accent: css("--accent"),
                   accentFg: css("--accent-fg"), bad: css("--bad"), ok: css("--ok"), a: css("--cell-a"), b: css("--cell-b") };
@@ -163,12 +150,10 @@
         const p = game.preview(s);
         $("s-prev").textContent = "Max-Min " + p.maxMin + ", reward " + (p.reward > 0 ? "+1" : p.reward < 0 ? "-1" : "0");
       } else $("s-prev").textContent = "over capacity";
-      $("l-moves").textContent = mode() === "movement" ? "Moves left" : "Moves left (movement only)";
-      $("s-moves").textContent = mode() === "movement" ? String(game.maxMoves - game.moves) : "-";
+      $("s-moves").textContent = String(game.maxMoves - game.moves);
       $("ev").textContent = `EV ${game.i + 1} of ${n}: arrives ${C.timeClock(ev.arrival)}, leaves ${C.timeClock(ev.departure)}, ` +
         `needs ${fmtDur(ev.l)}. Charging ${C.slotClock(s)} to ${C.slotClock(s + ev.l)}.`;
-      flash(mode() === "movement" ? "Movement: arrow keys shift the block, down arrow, Space or Enter drop it."
-                                  : "Schedule: choose the start with the arrow keys (Shift: one hour), down arrow, Space or Enter drop it.");
+      flash("Arrow keys shift the block; down arrow, Space or Enter drop it.");
     } else {
       $("s-prev").textContent = "-"; $("s-moves").textContent = "-";
       $("ev").textContent = "";
@@ -187,29 +172,19 @@
     if (tag === "INPUT" || tag === "SELECT") { if (ev.key === "Escape") ev.target.blur(); return; }
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
     const k = ev.key;
-    const map = { ArrowLeft: "left", ArrowRight: "right", ArrowDown: "down", " ": "down", Enter: "down", Home: "home", End: "end" };
+    const map = { ArrowLeft: "left", ArrowRight: "right", ArrowDown: "down", " ": "down", Enter: "down" };
     if (map[k]) {
       if (tag === "BUTTON" && (k === " " || k === "Enter")) return;   // let a focused button act
       ev.preventDefault(); act(map[k], ev.shiftKey); return;
     }
-    if (k === "m" || k === "M") { $("mode").value = mode() === "movement" ? "schedule" : "movement"; if (game.ev) cursor = game.pos; render(); }
-    else if (k === "r" || k === "R") newGame();
+    if (k === "r" || k === "R") newGame();
     else if (k === "n" || k === "N") { seed += 1; newGame(); }
     else if (k >= "1" && k <= String(LEVELS.length)) { key = LEVELS[+k - 1]; newGame(); }
   });
 
-  board.addEventListener("click", ev => {        // schedule mode: click a column to choose the start
-    if (!game.ev || mode() !== "schedule") return;
-    const r = board.getBoundingClientRect();
-    const x = (ev.clientX - r.left) * board.width / r.width;
-    const [lo, hi] = game.window();
-    cursor = Math.min(hi, Math.max(lo, Math.floor((x - X0) / CW)));
-    render();
-  });
   document.querySelectorAll("[data-act]").forEach(b => b.addEventListener("click", () => act(b.dataset.act, false)));
   $("restart").addEventListener("click", newGame);
   $("newseed").addEventListener("click", () => { seed += 1; newGame(); });
-  $("mode").addEventListener("change", () => { if (game.ev) cursor = game.pos; render(); $("mode").blur(); });
   $("level").addEventListener("change", () => { key = $("level").value; newGame(); $("level").blur(); });
   $("seed").addEventListener("change", () => { seed = Math.max(1, Math.floor(+$("seed").value) || 1); newGame(); });
   if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => game && render());

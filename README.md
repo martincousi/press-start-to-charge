@@ -27,25 +27,22 @@ is the Google Fonts stylesheet.
   RMSE of the load around its mean. Lower Max-Min is better.
 - No undo: as in the online problem, a decision is final and the next EV is not shown in advance.
 
-## Action types
+## Actions
 
-- **Movement** (Section 4.5): left / right shift the block one slot inside its window, down drops it. The block appears
-  at its arrival slot. After T = 96 shifts the block drops by itself (Section 4.1).
-- **Schedule** (Section 4.5): name the start slot directly. In the UI the arrow keys move a cursor over the window
-  (no move count, no limit) and down drops; the engine receives a single `["schedule", s]` action.
-
-The action type can be switched at any time (`M`); each drop is recorded with the action that produced it.
+The player uses the paper's **movement** actions (Section 4.5): left / right shift the block one slot inside its
+window, down drops it. The block appears at its arrival slot. After T = 96 shifts the block drops by itself
+(Section 4.1). The paper's schedule action (name the start slot directly) leads to the same schedules, so the page
+does not offer it; the engine keeps it as `["schedule", s]` because the benchmark policies use it.
 
 ## Controls
 
-| Key | Movement | Schedule |
-| --- | --- | --- |
-| `←` `→` | shift one slot | move the start one slot |
-| `Shift`+`←` `→`, `Home`, `End` | - | one hour; window ends |
-| `↓`, `Space`, `Enter` | drop | drop |
-| `M` / `1`-`5` / `N` / `R` | switch action type / level / next seed / restart | same |
+| Key | Action |
+| --- | --- |
+| `←` `→` | shift the block one slot |
+| `↓`, `Space`, `Enter` | drop |
+| `1`-`5` / `N` / `R` | level / next seed / restart |
 
-Mouse and touch are optional: buttons for left, drop and right; in schedule mode a click on a column picks the start.
+Mouse and touch are optional: buttons for left, drop and right.
 The level and seed are kept in the URL (`#s1-7` is Scenario 1, seed 7).
 
 ## Levels
@@ -101,8 +98,8 @@ figures are the same (its largest peak over these seeds is 134).
    capacity, it drops at the nearest start that does not (earlier on ties). The paper does not cover this case.
 9. **Overload** (not in the paper): if an arriving EV has no feasible start, the game ends. The paper's experiments
    never reach this case; here a player can cause it by stacking load.
-10. **Schedule action for a human** (Section 4.5): the paper's agent outputs a one-hot vector over T slots. A human
-    picks the slot with a cursor or a click; the cursor moves are not game actions and have no limit.
+10. **Schedule action** (Section 4.5): not offered to the player, since it reaches the same schedules as movement;
+    kept in the engine for the benchmark policies.
 11. **Reward with an empty board** (Equation 1): the imbalance before the first EV is 0, so the first drop
     always gets -1.
 12. **Greedy tie-breaking** (Section 6.2): earliest start. Current practice, if its arrival slot is over capacity,

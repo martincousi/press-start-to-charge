@@ -65,10 +65,6 @@
     <div class="row">
       <select id="level" aria-label="Level"></select>
       <label class="row" style="gap:4px">Seed <input id="seed" type="number" min="1" step="1" value="1"></label>
-      <select id="mode" aria-label="Action type">
-        <option value="movement">Action: movement</option>
-        <option value="schedule">Action: schedule</option>
-      </select>
       <button id="newseed">New seed</button>
       <button id="restart">Restart</button>
     </div>
@@ -90,7 +86,7 @@
       <span>RMSE</span><b id="s-rmse">-</b>
       <span>Reward, Eq. (1)</span><b id="s-rew">-</b>
       <span>Drop here</span><b id="s-prev">-</b>
-      <span id="l-moves">Moves left</span><b id="s-moves">-</b>
+      <span>Moves left</span><b id="s-moves">-</b>
     </div>
     <div class="label">Same EVs, full day (Max-Min / RMSE)</div>
     <div class="stats">
@@ -98,13 +94,9 @@
       <span>Current practice</span><b id="s-current">-</b>
     </div>
     <div class="help">
-      <p><b>Movement</b> (as in the paper): <kbd>&larr;</kbd><kbd>&rarr;</kbd> shift the block one slot (15 min) inside its
-         window, <kbd>&darr;</kbd>, <kbd>Space</kbd> or <kbd>Enter</kbd> drop it. After 96 shifts it drops by itself.</p>
-      <p><b>Schedule</b>: choose the start slot directly. <kbd>&larr;</kbd><kbd>&rarr;</kbd> one slot,
-         <kbd>Shift</kbd>+<kbd>&larr;</kbd><kbd>&rarr;</kbd> one hour, <kbd>Home</kbd><kbd>End</kbd> window ends
-         (or click a column); <kbd>&darr;</kbd>, <kbd>Space</kbd> or <kbd>Enter</kbd> drop. No move limit.</p>
-      <p><b>Other keys</b>: <kbd>M</kbd> switch action type, <kbd>1</kbd>-<kbd>5</kbd> level, <kbd>N</kbd> new seed,
-         <kbd>R</kbd> restart.</p>
+      <p><b>Keys</b>: <kbd>&larr;</kbd><kbd>&rarr;</kbd> shift the block one slot (15 min) inside its window,
+         <kbd>&darr;</kbd>, <kbd>Space</kbd> or <kbd>Enter</kbd> drop it. After 96 shifts it drops by itself.
+         <kbd>1</kbd>-<kbd>5</kbd> level, <kbd>N</kbd> new seed, <kbd>R</kbd> restart.</p>
       <p>The block falls column by column: each slot it covers gains one unit of load. Red columns are outside the EV's
          window. A slot cannot exceed the capacity (top of the board); if an EV has no place left, the game ends.
          There is no undo: as in the online problem, a decision is final.</p>
