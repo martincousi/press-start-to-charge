@@ -144,13 +144,13 @@
     <div class="help">
       <p><b>Keys:</b> <kbd>&larr;</kbd><kbd>&rarr;</kbd> shift the block one slot (15 min) inside its window,
          <kbd>&darr;</kbd> or <kbd>Space</kbd> drop it (after 96 shifts it drops by itself).</p>
-      <p>The block falls column by column: each slot it covers gains one unit of load. Red columns are outside the EV's
+      <p><b>The board:</b> The block falls column by column: each slot it covers gains one unit of load. Red columns are outside the EV's
          window. A slot cannot exceed the capacity (red line at the top); if an EV has no place left, the game ends.
          The load already placed is grey, the EV dropped last is blue. On the four scenarios the scale is squeezed in
          the grey band under the capacity line, so that one unit is taller on the rest of the board. There is no undo:
          as in the online problem, a decision is final.</p>
-      <p><b>References</b> (online heuristics from Section 6.2 of the paper, on the same EVs; <i>Show references</i>
-         draws the load each one ends the day with, and a click on a row shows or hides its line).
+      <p><b>References:</b> Online heuristics from Section 6.2 of the paper, on the same EVs; <i>Show references</i>
+         draws the load each one ends the day with, and a click on a row shows or hides its line.
          Current practice starts charging on arrival.
          Greedy starts each EV where the sum of loads under the block is smallest (Chau et al. 2023).
          Row-filling takes the lowest row, then the leftmost start, where the block fits (Zhang et al. 2019).

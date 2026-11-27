@@ -168,7 +168,7 @@ test("ids and labels of the conventions exist in index.html", () => {
                  '<details class="paper"', "<footer>"].map(at);
   eq(order.slice().sort((a, b) => a - b), order, "layout order");
   ok(/<summary>Paper's reported averages \(paper instances, not this one\)<\/summary>/.test(html), "paper summary");
-  ok(/<b>Keys:<\/b>/.test(html) && html.indexOf("<b>Keys:</b>") < html.indexOf("<b>References</b>") && !/README/.test(html), "help: Keys first; no README link");
+  { const k = html.indexOf("<b>Keys:</b>"), b = html.indexOf("<b>The board:</b>"), r = html.indexOf("<b>References:</b>"); ok(k > 0 && k < b && b < r && !/README/.test(html), "help: Keys, The board, References; no README link"); }
   ok(/<script src="paper.js"><\/script>\s*<script src="ui.js">/.test(html), "paper.js must load before ui.js");
 });
 
