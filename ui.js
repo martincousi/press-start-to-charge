@@ -382,6 +382,7 @@
     pause: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z" fill="currentColor"/></svg>',
   };
   document.addEventListener("keydown", ev => {
+    if (ev.target.tagName === "A" && ev.key === "Enter") return;   // follow a focused link (site navigation)
     const tag = ev.target.tagName;
     if (tag === "INPUT" || tag === "SELECT") { if (ev.key === "Escape") ev.target.blur(); return; }
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;

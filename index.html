@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Online electric vehicle charging scheduling as a Tetris-like browser game, after Ghahtarani, Cousineau, Farahmand and Mendoza (2026).">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Space+Grotesk:wght@600&display=swap">
 <title>Press Start to Charge</title>
 <style>
@@ -71,10 +72,15 @@
   .pad { display: grid; grid-template-columns: repeat(3, 56px); gap: 4px; }
   .pad button { height: 42px; padding: 0; }
   footer { font-size: 12px; color: var(--muted); max-width: 100ch; line-height: 1.5; border-top: 1px solid var(--line); padding-top: 10px; }
+  /* Links back to the main site and the list of games */
+  nav.crumbs { font-size: 13px; color: var(--muted); padding-top: 8px; }
+  nav.crumbs a { color: var(--accent); text-decoration: none; }
+  nav.crumbs a:hover, nav.crumbs a:focus-visible { text-decoration: underline; }
 </style>
 </head>
 <body>
 <header>
+<nav class="crumbs" aria-label="Site"><a href="https://martincousi.github.io/">&larr; Martin Cousineau</a> &middot; <a href="https://martincousi.github.io/games/">All games</a></nav>
   <h1>Press Start to Charge</h1>
   <p>Online scheduling of home charging for electric vehicles (EVs), played as a game. Each block is one EV: its width
      is the charging time it needs, and it must be placed between the EV's arrival and departure. Blocks arrive one at a
