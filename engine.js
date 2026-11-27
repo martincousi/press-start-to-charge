@@ -180,7 +180,48 @@
     return best;
   }
 
-  // Policies: map a game state to a start slot (played with schedule actions).
+  // Thresholds X of the X-threshold heuristics (Section 6.2.1), computed once from a set D of simulated
+  // instances: seeds 1000001-1000100 of each level (D_SEEDS), disjoint from the seeds a player normally uses.
+  //   alpha: X = ceil(p_bar), p_bar = mean number of EVs charging per slot over D (sum of lengths / T, averaged).
+  //   beta:  X = mean over D of the oracle's peak load (Model B.1 solved exactly by tools/oracle_peaks.py;
+  //          the schedules are in tools/oracle_D.json and re-checked by the tests). Loads are integers, so
+  //          "load < X" is the same as "load < ceil(X)"; we store ceil(X).
+  // test/engine_test.js recomputes both from D.
+  const D_SEEDS = [1000001, 1000100];
+  const THRESHOLDS = {
+    warmup: { alpha: 6, beta: 9 },     // p_bar 5.97, oracle peak 8.02
+    s1: { alpha: 24, beta: 31 },       // p_bar 23.93, oracle peak 30.32
+    s2: { alpha: 25, beta: 34 },       // p_bar 24.02, oracle peak 33.67
+    s3: { alpha: 24, beta: 33 },       // p_bar 23.99, oracle peak 32.17
+    s4: { alpha: 36, beta: 46 },       // p_bar 35.77, oracle peak 45.04
+  };
+
+  // Row-filling (Section 6.2, after the lowest-horizontal-line algorithm of Zhang et al. 2019): scan the
+  // load matrix row by row from the bottom and, within a row, from left to right, and take the first start
+  // at which the block fits in that row inside the feasible window. The block fits in row r at start s when
+  // every slot it covers has at most r units (the cell of row r is free). This is the start with the lowest
+  // highest load under the block, earliest on ties.
+  function rowFill(g) {
+    const ev = g.ev, starts = g.feasibleStarts();
+    for (let r = 0; r < g.cap; r++)
+      for (const s of starts) {
+        let fits = true;
+        for (let j = s; j < s + ev.l; j++) if (g.loads[j] > r) { fits = false; break; }
+        if (fits) return s;
+      }
+    return starts[0];   // not reached: a feasible start fits in row cap - 1
+  }
+  // X-threshold (Section 6.2.1): an EV arriving at slot a starts there if the load of slot a is below X
+  // (and the block fits under the capacity); otherwise it is placed by Row-filling.
+  function threshold(X) { return g => (g.loads[g.ev.a] < X && g.fits(g.ev.a)) ? g.ev.a : rowFill(g); }
+  function levelThreshold(g, which) {
+    const t = THRESHOLDS[g.inst.scenario];
+    if (!t) throw new Error("no threshold for level " + g.inst.scenario);
+    return threshold(t[which])(g);
+  }
+
+  // Policies: map a game state to a start slot (played with schedule actions). All are online: they see the
+  // load so far and the arriving EV only.
   const POLICIES = {
     // Current practice (Section 6.2): start charging on arrival (earliest feasible start if capacity forbids it).
     current: g => g.fits(g.ev.a) ? g.ev.a : g.feasibleStarts()[0],
@@ -195,11 +236,46 @@
       }
       return best;
     },
+    rowfill: rowFill,
+    alpha: g => levelThreshold(g, "alpha"),
+    beta: g => levelThreshold(g, "beta"),
   };
+  const POLICY_NAMES = { current: "Current practice", greedy: "Greedy", rowfill: "Row-filling",
+                         alpha: "α-threshold", beta: "β-threshold" };
   function play(inst, policy) {
     const g = new Game(inst), f = typeof policy === "function" ? policy : POLICIES[policy];
     while (!g.done) g.step(["schedule", f(g)]);
     return g;
+  }
+
+  // Replay of an action sequence (a policy's schedule actions, or a player's movement actions), re-stepped
+  // through the engine. Frame k = the state after k EVs have been placed (k = 0..placed). Each frame records
+  // the running metrics; gameAt(k) rebuilds the game at frame k by stepping the first actions again.
+  class Replay {
+    constructor(inst, actions) {
+      this.inst = inst; this.actions = actions.map(a => a.slice());
+      const g = new Game(inst);
+      this.cut = [0];                       // number of actions consumed when k EVs are placed
+      this.frames = [frameOf(g)];
+      this.actions.forEach((a, t) => {
+        const before = g.i;
+        g.step(a);
+        if (g.i > before) { this.cut.push(t + 1); this.frames.push(frameOf(g)); }
+      });
+      this.final = g;
+      this.placed = g.i;                    // number of frames - 1
+      this.starts = g.starts.slice();
+    }
+    gameAt(k) {
+      k = Math.max(0, Math.min(this.placed, k));
+      const g = new Game(this.inst);
+      for (let t = 0; t < this.cut[k]; t++) g.step(this.actions[t]);
+      return g;
+    }
+  }
+  function frameOf(g) {
+    return { i: g.i, maxMin: imbalance(g.loads), rmse: rmse(g.loads), peak: Math.max(...g.loads),
+             rewardSum: g.rewardSum, lastReward: g.lastReward, done: g.done, failed: g.failed };
   }
 
   // Movement sequence that brings the current block from its position to start s and drops it.
@@ -220,7 +296,8 @@
   }
 
   const api = { T, LMAX, CAP, SCENARIOS, DEPARTURE, rng, generate, imbalance, rmse, reward, score,
-                Game, POLICIES, play, movesTo, slotClock, timeClock };
+                Game, POLICIES, POLICY_NAMES, THRESHOLDS, D_SEEDS, rowFill, threshold, play, Replay, movesTo,
+                slotClock, timeClock };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.Charge = api;
 })(this);

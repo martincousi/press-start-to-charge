@@ -91,10 +91,10 @@ test("capacity never exceeded and blocks stay in their windows (random play, 200
   ok(overloads > 0 && complete > 0, `expected both outcomes, got ${overloads} overloads and ${complete} complete games`);
 });
 
-test("a complete game charges every EV for its full length before departure", () => {
+test("a complete game charges every EV for its full length before departure (every policy)", () => {
   for (const k of KEYS) for (let seed = 1; seed <= 20; seed++) {
     const inst = C.generate(k, seed);
-    for (const p of ["greedy", "current"]) {
+    for (const p of Object.keys(C.POLICIES)) {
       const g = C.play(inst, p);
       ok(!g.failed && g.done, `${k}/${seed}/${p} did not finish`);
       g.starts.forEach((s, i) => {
@@ -188,6 +188,141 @@ test("greedy and current practice by hand; movement reaches the same schedule as
     const big = C.generate(k, 3), ref = C.play(big, "greedy"), g = new C.Game(big);
     while (!g.done) for (const a of C.movesTo(g, C.POLICIES.greedy(g))) g.step(a);
     eq(g.starts, ref.starts, k + " movement vs schedule");
+  }
+});
+
+// ---------------------------------------------------------------- heuristics of Section 6.2 / 6.2.1
+// Loads 1 2 1 0 1 0 on T = 6, built with schedule actions; then an EV with window 1..5 and length 2.
+function sixSlots(last) {
+  const inst = hand(6, 5, [{ a: 0, e: 1, l: 2 }, { a: 2, e: 2, l: 1 }, { a: 4, e: 4, l: 1 }, { a: 1, e: 1, l: 1 }, last]);
+  const g = new C.Game(inst);
+  for (const s of [0, 2, 4, 1]) g.step(["schedule", s]);
+  eq(g.loads, [1, 2, 1, 0, 1, 0], "loads");
+  return g;
+}
+test("Row-filling by hand: lowest row first, then leftmost start", () => {
+  // Window 0..5, length 2. Row 0 (slots with load 0 under the whole block): starts 3 -> (0, 1) no, 4 -> (1, 0) no.
+  // Row 1: start 0 -> loads (1, 2) no; 1 -> (2, 1) no; 2 -> (1, 0) yes.
+  const g = sixSlots({ a: 0, e: 5, l: 2 });
+  eq(C.rowFill(g), 2, "Row-filling");
+  eq(C.POLICIES.rowfill(g), 2, "Row-filling policy");
+  // A case where Row-filling and Greedy differ: loads 0 2 1 1, block of length 2 in window 0..3.
+  // Greedy: sums 2 (start 0), 3, 2 (start 2) -> earliest, 0. Row-filling: row 0 none, row 1 -> start 2 (loads 1, 1).
+  const inst = hand(4, 5, [{ a: 1, e: 1, l: 1 }, { a: 1, e: 1, l: 1 }, { a: 2, e: 3, l: 2 }, { a: 0, e: 3, l: 2 }]);
+  const h = new C.Game(inst);
+  for (const s of [1, 1, 2]) h.step(["schedule", s]);
+  eq(h.loads, [0, 2, 1, 1], "loads");
+  eq([C.POLICIES.greedy(h), C.rowFill(h)], [0, 2], "greedy vs Row-filling");
+  // With a block of length 1 in window 0..5, row 0 has slots 3 and 5: the leftmost, 3.
+  eq(C.rowFill(sixSlots({ a: 0, e: 5, l: 1 })), 3, "length 1");
+});
+test("X-threshold by hand: start on arrival if the load there is below X, Row-filling otherwise", () => {
+  // EV with window 1..5, length 2; load of its arrival slot 1 is 2.
+  const g = sixSlots({ a: 1, e: 5, l: 2 });
+  eq(C.threshold(3)(g), 1, "X = 3: 2 < 3, starts on arrival");
+  eq(C.threshold(2)(g), 2, "X = 2: 2 is not below 2, Row-filling");
+  eq(C.rowFill(g), 2, "Row-filling");
+  // capacity: with capacity 2 the arrival slot is full, so the rule falls back to Row-filling even with X large
+  const tight = sixSlots({ a: 1, e: 5, l: 2 }); tight.cap = 2;
+  eq(C.threshold(99)(tight), 2, "full arrival slot");
+});
+test("Row-filling equals 'lowest highest load under the block, earliest' (random states)", () => {
+  const u = C.rng(7);
+  for (let seed = 1; seed <= 60; seed++) {
+    const inst = C.generate(KEYS[seed % KEYS.length], seed), g = new C.Game(inst);
+    while (!g.done) {
+      let best = null, bv = Infinity;
+      for (const s of g.feasibleStarts()) {
+        let m = 0; for (let j = s; j < s + g.ev.l; j++) m = Math.max(m, g.loads[j]);
+        if (m < bv) { bv = m; best = s; }
+      }
+      eq(C.rowFill(g), best, `seed ${seed} EV ${g.i}`);
+      const fs = g.feasibleStarts();
+      g.step(["schedule", fs[Math.floor(u() * fs.length)]]);   // random states, not only Row-filling's own
+    }
+  }
+});
+test("threshold constants: alpha = ceil(mean load per slot over D), beta = ceil(mean oracle peak over D)", () => {
+  const fs = require("fs");
+  const oracle = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "tools", "oracle_D.json"), "utf8"));
+  const [s0, s1] = C.D_SEEDS;
+  for (const k of KEYS) {
+    let pbar = 0, peaks = 0;
+    const rows = oracle.levels[k].instances;
+    eq(rows.map(r => r.seed), Array.from({ length: s1 - s0 + 1 }, (_, i) => s0 + i), k + " oracle seeds");
+    for (const r of rows) {
+      const inst = C.generate(k, r.seed);
+      pbar += inst.evs.reduce((x, e) => x + e.l, 0) / inst.T;
+      // re-check the solver's schedule independently: complete, in the windows, under the capacity, same Max-Min
+      const sc = C.score(inst, r.starts), rc = recompute(inst, r.starts);
+      ok(sc.feasible && r.starts.every(s => s !== null), `${k}/${r.seed}: oracle schedule infeasible`);
+      eq(rc.maxMin, r.maxMin, `${k}/${r.seed}: oracle Max-Min`);
+      eq(Math.min(...rc.loads), 0, `${k}/${r.seed}: min load (so the peak is the Max-Min)`);
+      // no online policy beats the full-information optimum
+      for (const p of Object.keys(C.POLICIES)) ok(C.score(inst, C.play(inst, p).starts).maxMin >= r.maxMin, `${k}/${r.seed}: ${p} below the oracle`);
+      peaks += r.maxMin;
+    }
+    pbar /= rows.length; peaks /= rows.length;
+    ok(Math.abs(peaks - oracle.levels[k].meanPeak) < 1e-9, k + " mean peak");
+    eq([C.THRESHOLDS[k].alpha, C.THRESHOLDS[k].beta], [Math.ceil(pbar), Math.ceil(peaks)], k + " thresholds");
+  }
+});
+
+// ---------------------------------------------------------------- replays
+test("replay of every policy's actions reproduces its final metrics through the engine", () => {
+  for (const k of KEYS) for (let seed = 1; seed <= 10; seed++) {
+    const inst = C.generate(k, seed);
+    for (const p of Object.keys(C.POLICIES)) {
+      const g = C.play(inst, p), R = new C.Replay(inst, g.history);
+      eq(R.placed, inst.evs.length, `${k}/${seed}/${p} frames`);
+      eq(R.starts, g.starts, "starts");
+      const f = R.frames[R.placed], sc = C.score(inst, g.starts);
+      eq([f.maxMin, f.rmse, f.rewardSum, f.done, f.failed], [sc.maxMin, sc.rmse, sc.rewardSum, true, false], `${k}/${seed}/${p} final`);
+      eq(R.final.loads, g.loads, "final loads");
+      // running values at a few frames, against an independent recomputation of the prefix
+      for (const kk of [0, 1, 37, R.placed - 1]) {
+        const pre = g.starts.map((s, i) => i < kk ? s : null), rc = recompute(inst, pre), fr = R.frames[kk];
+        eq([fr.i, fr.maxMin, fr.rewardSum], [kk, rc.maxMin, rc.rewardSum], `${k}/${seed}/${p} frame ${kk}`);
+        eq(R.gameAt(kk).loads, rc.loads, `${k}/${seed}/${p} gameAt(${kk})`);
+      }
+    }
+  }
+});
+test("replay of movement actions (random play, with overloads) matches the game frame by frame", () => {
+  const u = C.rng(2024);
+  let failed = 0;
+  for (let seed = 1; seed <= 60; seed++) {
+    const inst = C.generate("warmup", seed, { cap: seed % 3 ? C.SCENARIOS.warmup.cap : 6 });
+    const g = randomPlay(inst, u), R = new C.Replay(inst, g.history);
+    if (g.failed) failed++;
+    eq([R.placed, R.final.done, R.final.failed, R.final.rewardSum], [g.i, true, g.failed, g.rewardSum], `seed ${seed}`);
+    eq(R.final.loads, g.loads, "loads");
+    eq(R.cut[R.placed] <= g.history.length, true, "cut");
+    for (let k = 0; k <= R.placed; k += 7) {
+      const gk = R.gameAt(k);
+      eq([gk.i, gk.rewardSum], [k, R.frames[k].rewardSum], `seed ${seed} frame ${k}`);
+    }
+  }
+  ok(failed > 0, "expected some overloaded games");
+});
+
+test("calibration: heuristics vs Greedy, same ratios as the paper within 0.05 (EC Tables 1-4, 100 seeds)", () => {
+  const paper = { s1: { greedy: 38.38, rowfill: 39.82, alpha: 35.72, beta: 34.20 },
+                  s2: { greedy: 44.05, rowfill: 45.43, alpha: 43.50, beta: 42.24 },
+                  s3: { greedy: 44.59, rowfill: 45.90, alpha: 44.12, beta: 43.20 },
+                  s4: { greedy: 56.81, rowfill: 58.63, alpha: 51.72, beta: 49.85 } };
+  for (const k of Object.keys(paper)) {
+    const m = {}, r = {};
+    for (const p of Object.keys(paper[k])) { m[p] = 0; r[p] = 0; }
+    for (let seed = 1; seed <= 100; seed++) {
+      const inst = C.generate(k, seed);
+      for (const p of Object.keys(m)) { const sc = C.score(inst, C.play(inst, p).starts); m[p] += sc.maxMin / 100; r[p] += sc.rmse / 100; }
+    }
+    console.log(`     ${k}: ` + Object.keys(m).map(p => `${p} ${m[p].toFixed(2)} / ${r[p].toFixed(2)} (paper ${paper[k][p]})`).join(", "));
+    for (const p of ["rowfill", "alpha", "beta"]) {
+      const ours = m[p] / m.greedy, theirs = paper[k][p] / paper[k].greedy;
+      ok(Math.abs(ours - theirs) < 0.05, `${k} ${p}: ratio ${ours.toFixed(3)} vs paper ${theirs.toFixed(3)}`);
+    }
   }
 });
 
