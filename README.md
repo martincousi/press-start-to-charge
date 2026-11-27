@@ -33,37 +33,55 @@ is the Google Fonts stylesheet.
 The player uses the paper's **movement** actions (Section 4.5): left / right shift the block one slot inside its
 window, down drops it. The block appears at its arrival slot. After T = 96 shifts the block drops by itself
 (Section 4.1). The paper's schedule action (name the start slot directly) leads to the same schedules, so the page
-does not offer it; the engine keeps it as `["schedule", s]` because the benchmark policies use it.
+does not offer it; the engine keeps it as `["schedule", s]` because the reference heuristics use it.
 
-## Controls
+## Page layout and controls
+
+The page follows the interface conventions shared by the games on the site (the same layout, names, keys and
+colours in each game). Left: the toolbar (level, seed, *New seed*, *Restart*), the board, the status line (what to
+do now, with the Max-Min and reward a drop at the current position would give), the replay bar when it is open, and
+the arriving EV's arrival, departure and charging time. Right: *Your game* (Max-Min load, peak, RMSE, cumulative
+reward of Equation (1), EV k of n, moves left), *References on this instance* (the five heuristics below, Max-Min /
+RMSE, each with its colour swatch), the buttons *Watch replays* and *Show references*, the move pad for touch
+screens, the help, and the paper's reported averages (collapsed). The level and seed are kept in the URL (`#s1-7` is
+Scenario 1, seed 7).
 
 | Key | Action |
 | --- | --- |
 | `←` `→` | shift the block one slot |
 | `↓`, `Space`, `Enter` | drop |
 | `1`-`5` / `N` / `R` | level / next seed / restart |
-| `V` | watch the replays (during a game: asks first, a second `V` confirms) |
+| `W` | watch replays: open or close the replay bar (`V`, the old key, still works) |
+| `O` | show or hide the references |
 
-In a replay:
+While the replay bar is open, keys act on the replay only:
 
 | Key | Action |
 | --- | --- |
-| `Space` (or `K`) | play / pause |
-| `←` `→` | one EV back / forward |
-| `Home` `End` | first / last EV |
+| `Space` or `K` | play / pause |
+| `←` `→` | one EV back / forward (with `Shift`: 10 EVs) |
+| `Home` `End` | start / end |
+| `↑` `↓` | previous / next replay in the "Watch:" menu |
 | `-` `+` (or `[` `]`) | slower / faster (1, 2, 5, 10, 20 or 50 EVs per second) |
-| `P` / `Shift`+`P` | next / previous policy |
-| `Esc` (or `V`) | back to your game |
+| `Esc` or `W` | close |
 
-Mouse and touch are optional: buttons for left, drop and right; in a replay, a policy menu, buttons (first,
-back, play/pause, forward, last), a speed menu and a slider over the EVs. The level and seed are kept in the URL
-(`#s1-7` is Scenario 1, seed 7).
+Replays and references work at any time, also during a game, without confirmation (the owner's choice for class
+use, although they show the EVs still to come). They do not change the game: closing the replay bar or hiding the
+references returns to the game as it was.
+
+## Colours
+
+All the load already placed is drawn in one neutral grey; only the EV dropped last (in a replay: the EV just placed)
+is in the accent colour (HEC navy; light blue in the dark theme). The references have the same colour in the stats
+grid, the overlay and the replay bar: current practice `#E69F00`, Greedy `#CC79A7`, Row-filling `#009E73`,
+α-threshold `#56B4E9`, β-threshold `#D55E00` (Okabe-Ito, colour-blind safe). These are the conventional colours
+after the optimum's `#0072B2`, which is not used: the page computes no optimum per instance.
 
 ## Vertical scale
 
 One unit of load (one EV charging in one slot) was 396 / 140 = 2.8 pixels tall on the scenarios (capacity 140).
 The board is now 820 x 580 (logical pixels) and its vertical axis stops below the capacity: it runs from 0 to
-`ymax`, the highest peak of the four benchmark heuristics other than current practice on this instance, plus 15 %,
+`ymax`, the highest peak of the four reference heuristics other than current practice on this instance, plus 15 %,
 rounded up to a multiple of 5 (45 to 90 on seeds 1-100). Loads from `ymax` to the capacity are drawn in a
 compressed grey band at the top of the board, marked with a zigzag on the axis and "compressed: ymax to 140", in a
 darker colour; the capacity line and its label stay at the top. The scale is computed when the level starts and
@@ -80,19 +98,33 @@ level (capacity 30) keeps the full axis up to the capacity, at 16 pixels per uni
 
 ## Replays
 
-After the game (complete or overloaded), `V` or *Watch replays* opens a replay of any benchmark policy, or of your
-own game, on the same EVs. During a game, a replay would show the EVs still to come, so the page asks for an
-explicit confirmation first (*Reveal and watch*); the score panel then says "replays seen before the end".
+*Watch replays* (`W`) opens the replay bar under the status line:
 
-A replay re-steps the policy's recorded actions through the engine (`Charge.Replay`; schedule actions for the
-benchmark policies, your left / right / down moves for your own game); it is not a separate simulation. Frame k
-shows the board after k EVs, with EV k in the action area at the start the policy gives it and its landing place
-shaded, and the running values: EVs placed, Max-Min, RMSE and cumulative reward of Equation (1) with the last
-reward. At the last frame these equal the values in the score panel (checked by the tests).
+    [Watch: Your game v]  [⇤ Start] [← Back] [▶ Play] [Forward →] [End ⇥]  [Speed v]  [✕ Close]
+    [=========o------------------------------------------------]  (scrubber over the EVs placed)
+    <swatch> EV 31 of 200 · Max-Min · RMSE · Reward
+
+"Watch:" lists your game (the moves so far, or the whole game at the end) and the five heuristics, in the order of
+the references grid. A replay re-steps the recorded actions through the engine (`Charge.Replay`; schedule actions
+for the heuristics, your left / right / down moves for your game); it is not a separate simulation. Frame k shows
+the board after k EVs, with the EV just placed in the accent colour and EV k + 1 in the action area at the start the
+policy gives it, its landing place shaded. The running line gives the EVs placed, Max-Min, RMSE and cumulative
+reward of Equation (1) with the last reward. At the last frame these equal the values in the stats grids (checked by
+the tests).
+
+## References overlay
+
+*Show references* (`O`; the label becomes *Hide references*) draws, for each heuristic, the load it ends the day
+with on these EVs, as a step line in its colour over the board; the swatches of the references grid are the legend.
+A click on a row of the grid (or `Space` / `Enter` on it, since the rows are buttons) shows or hides that line, so
+the player can compare with one or two references at a time; a click on a row while the overlay is hidden shows it.
+The lines use the board's own vertical scale: current practice, the only heuristic that goes above `ymax`, is drawn
+in the compressed band exactly where a bar of that load ends (checked by the tests). The overlay can also be shown
+over a replay.
 
 ## Paper averages
 
-A collapsible panel shows the paper's averages for the current scenario (EC Tables 1-4: Max-Min and RMSE of the
+A collapsed panel, "Paper's reported averages (paper instances, not this one)", shows the paper's averages for the current scenario (EC Tables 1-4: Max-Min and RMSE of the
 oracle, Re-opt, the rolling 2SSP at seven lookaheads, the six heuristics and the eight supervised / DAgger agents;
 for Scenario 1 also the reinforcement-learning agents of EC Table 5). They are means over the paper's 100 test
 instances, not values for the seed on screen; the heuristics run on this page are in bold.
@@ -110,7 +142,7 @@ instances, not values for the seed on screen; the heuristics run on this page ar
 Common to all (EC Appendix D): departures normal with mean 6 AM next day and sd 3 h; durations uniform between
 15 minutes and 5.5 hours (1 to 22 slots), shortened if needed to fit the window.
 
-## Benchmarks shown next to the player's score
+## References shown next to the player's score
 
 On the same EVs, the page shows the full-day result (Max-Min / RMSE) of the online heuristics of Section 6.2 that the
 paper specifies fully. Each decides when an EV arrives, from the load so far, without knowledge of later EVs.
@@ -202,7 +234,7 @@ Not implemented:
 9. **Overload** (not in the paper): if an arriving EV has no feasible start, the game ends. The paper's experiments
    never reach this case; here a player can cause it by stacking load.
 10. **Schedule action** (Section 4.5): not offered to the player, since it reaches the same schedules as movement;
-    kept in the engine for the benchmark policies.
+    kept in the engine for the reference heuristics.
 11. **Reward with an empty board** (Equation 1): the imbalance before the first EV is 0, so the first drop
     always gets -1.
 12. **Greedy tie-breaking** (Section 6.2): earliest start. Current practice, if its arrival slot is over capacity,
@@ -210,7 +242,7 @@ Not implemented:
 13. **Random numbers**: mulberry32 with Box-Muller normals, so instances are reproducible in any browser and in node,
     but they are not the paper's instances.
 14. **Display**: on narrow screens the canvas scales down with the page, so axis labels become small; the numbers
-    are repeated in the score panel.
+    are repeated in the stats grids.
 15. **Row-filling** (Section 6.2): "fits in a row" is read as every covered slot having at most r units, since the
     block falls column by column (item 6). The paper's animation is not available to us.
 16. **Thresholds** (Section 6.2.1): D is not described beyond "historical or simulated instances"; we use 100
@@ -219,19 +251,19 @@ Not implemented:
     X and below ceil(X) are the same, so the mean oracle peak is stored rounded up. If the arrival slot is full (never
     with capacity 140), the rule falls back to Row-filling. In our generator slot 0 (noon to 12:15) is always empty,
     so the oracle's peak equals its optimal Max-Min and is the same for every optimal schedule.
-17. **Vertical scale**: see *Vertical scale*. The axis range is computed from the benchmark heuristics on the same
-    EVs; it says little about the EVs to come, and the benchmark results are already in the score panel.
+17. **Vertical scale**: see *Vertical scale*. The axis range is computed from the reference heuristics on the same
+    EVs; it says little about the EVs to come, and the references' results are already in the stats grid.
 
 ## Files
 
 | File | What |
 | --- | --- |
-| `index.html`, `ui.js` | Page and user interface (canvas drawing, keyboard, replays) |
+| `index.html`, `ui.js` | Page and user interface (canvas drawing, keyboard, replays, references overlay) |
 | `engine.js` | Rules engine: instance generator, game, reward, scores, heuristics, replays; UMD module usable from node |
 | `paper.js` | Averages reported in the paper (EC Tables 1-5), for the paper-averages panel |
 | `tools/oracle_peaks.py` | Offline: solves the oracle (Model B.1, Gurobi) on the instances D of the β-threshold |
 | `tools/oracle_D.json` | Its output: optimal schedule and Max-Min of each instance of D |
 | `test/engine_test.js` | Node tests of the engine (rules, heuristics, threshold constants, replays) |
-| `test/ui_smoke.js` | Node smoke test of the page with a fake DOM and canvas; `SVG_OUT=dir` writes the frames as SVG |
+| `test/ui_smoke.js` | Node smoke test of the page with a fake DOM and canvas (layout and ids of the conventions, keys `W` and `O`, replay labels, final replay values = stats grids, colours of the placed load, reference lines on the compressed scale); `SVG_OUT=dir` writes the frames as SVG |
 
 Tests (node 22): `node test/engine_test.js && node test/ui_smoke.js`

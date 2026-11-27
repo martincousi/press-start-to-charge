@@ -9,14 +9,14 @@
 <style>
   /* Layout: board and controls on the left, scores and help on the right; stacks on phones. */
   :root { --bg: #ffffff; --fg: #111827; --muted: #5f6b7a; --line: #dfe3ea; --accent: #003DA5; --accent-fg: #ffffff;
-          --surface: #f6f8fb; --bad: #c0392b; --ok: #1e8449; --cell-a: #9ca3af; --cell-b: #c4cad3;
+          --surface: #f6f8fb; --bad: #c0392b; --ok: #1e8449; --cell: #a7afbb;
           --display: "Space Grotesk", system-ui, sans-serif;
           --body: Inter, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #0f141c; --fg: #e8ecf2; --muted: #9aa6b6;
           --line: #2a3443; --accent: #7aa7ff; --accent-fg: #0f141c; --surface: #161d28; --bad: #ff7b6b; --ok: #58d68d;
-          --cell-a: #4b5563; --cell-b: #6b7280; color-scheme: dark; } }
+          --cell: #5b6472; color-scheme: dark; } }
   :root[data-theme="dark"] { --bg: #0f141c; --fg: #e8ecf2; --muted: #9aa6b6; --line: #2a3443; --accent: #7aa7ff;
-          --accent-fg: #0f141c; --surface: #161d28; --bad: #ff7b6b; --ok: #58d68d; --cell-a: #4b5563; --cell-b: #6b7280;
+          --accent-fg: #0f141c; --surface: #161d28; --bad: #ff7b6b; --ok: #58d68d; --cell: #5b6472;
           color-scheme: dark; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: var(--body); color: var(--fg); background: var(--bg);
@@ -47,13 +47,18 @@
   .stats { display: grid; grid-template-columns: auto auto; gap: 2px 14px; font-size: 14px; justify-content: start; }
   .stats b { color: var(--accent); font-variant-numeric: tabular-nums; }
   .stats .on { background: var(--surface); outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
+  .stats .head { color: var(--muted); font-size: 12px; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 6px; vertical-align: -1px;
+        border: 2px solid transparent; }
+  /* rows of the references grid: buttons that show or hide the reference's line on the board */
+  .stats button.ref { padding: 0 4px 0 0; border: 0; background: none; text-align: left; font-size: 14px; }
+  .stats button.ref[aria-pressed="false"] { color: var(--muted); }
+  .stats button.ref[aria-pressed="false"] .sw { background: none !important; }
   .replay-bar { display: flex; flex-direction: column; gap: 8px; }
-  .replay-bar .row button { min-width: 40px; height: 36px; display: inline-flex; align-items: center; justify-content: center; }
+  .replay-bar .row button { min-width: 40px; white-space: nowrap; height: 36px; display: inline-flex; align-items: center; justify-content: center; }
   .replay-bar input[type=range] { width: 100%; padding: 0; accent-color: var(--accent); }
-  .rp-stats { display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .rp-stats { font-size: 15px; font-variant-numeric: tabular-nums; }
   .rp-stats b { color: var(--accent); }
-  .reveal { font-size: 14px; border: 1px solid var(--bad); border-radius: 6px; padding: 8px 10px; display: flex;
-            flex-direction: column; gap: 8px; }
   details.paper { font-size: 13px; color: var(--muted); }
   details.paper summary { cursor: pointer; color: var(--fg); }
   details.paper table { border-collapse: collapse; font-variant-numeric: tabular-nums; margin-block: 6px; }
@@ -71,6 +76,7 @@
   kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 12px; }
   .pad { display: grid; grid-template-columns: repeat(3, 56px); gap: 4px; }
   .pad button { height: 42px; padding: 0; }
+  footer a { color: var(--accent); }
   footer { font-size: 12px; color: var(--muted); max-width: 100ch; line-height: 1.5; border-top: 1px solid var(--line); padding-top: 10px; }
   /* Links back to the main site and the list of games */
   nav.crumbs { font-size: 13px; color: var(--muted); padding-top: 8px; }
@@ -92,80 +98,80 @@
     <div class="row">
       <select id="level" aria-label="Level"></select>
       <label class="row" style="gap:4px">Seed <input id="seed" type="number" min="1" step="1" value="1"></label>
-      <button id="newseed">New seed</button>
-      <button id="restart">Restart</button>
+      <button id="newseed" title="New seed (N)">New seed</button>
+      <button id="restart" title="Restart (R)">Restart</button>
     </div>
-    <div id="ev"></div>
     <canvas id="board" width="820" height="580" aria-label="Game board: time slots across, load up"></canvas>
-    <div id="msg" aria-live="polite"></div>
+    <div id="msg" role="status" aria-live="polite"></div>
     <div class="replay-bar" id="replay-bar" hidden>
       <div class="row">
-        <select id="rp-policy" aria-label="Policy to replay (P)"></select>
-        <button id="rp-first" title="First EV (Home)" aria-label="First EV (Home)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 2.5h2v11H3zM14 2.5v11L6 8z" fill="currentColor"/></svg></button>
-        <button id="rp-back" title="Previous EV (left arrow)" aria-label="Previous EV (left arrow)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M11 2.5v11L3 8z" fill="currentColor"/></svg></button>
-        <button id="rp-play" class="primary" title="Play (Space)" aria-label="Play (Space)"></button>
-        <button id="rp-fwd" title="Next EV (right arrow)" aria-label="Next EV (right arrow)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M5 2.5v11L13 8z" fill="currentColor"/></svg></button>
-        <button id="rp-last" title="Last EV (End)" aria-label="Last EV (End)"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 2.5v11L10 8zM11 2.5h2v11h-2z" fill="currentColor"/></svg></button>
-        <select id="rp-speed" aria-label="Replay speed (- and +)"></select>
-        <button id="rp-exit" title="Back to my game (Esc)">Back to my game</button>
+        <select id="rp-watch" aria-label="Replay to watch (up and down arrows)" title="Replay to watch (&uarr; &darr;)"></select>
+        <button id="rp-start" title="Start (Home)" aria-label="Start (Home)">&#x21E4; Start</button>
+        <button id="rp-back" title="One EV back (left arrow; Shift: 10)" aria-label="One EV back (left arrow; Shift: 10)">&#x2190; Back</button>
+        <button id="rp-play" class="primary" title="Play (Space or K)" aria-label="Play (Space or K)">&#x25B6; Play</button>
+        <button id="rp-fwd" title="One EV forward (right arrow; Shift: 10)" aria-label="One EV forward (right arrow; Shift: 10)">Forward &#x2192;</button>
+        <button id="rp-end" title="End (End)" aria-label="End (End)">End &#x21E5;</button>
+        <select id="rp-speed" aria-label="Replay speed (- and +)" title="Replay speed (- and +)"></select>
+        <button id="rp-close" title="Close (Esc or W)" aria-label="Close (Esc or W)">&#x2715; Close</button>
       </div>
       <input id="rp-scrub" type="range" min="0" max="0" step="1" value="0" aria-label="Replay position: EVs placed">
-      <div class="rp-stats" aria-live="off">
-        <span>EVs placed <b id="rp-k">-</b></span>
-        <span>Max-Min <b id="rp-mm">-</b></span>
-        <span>RMSE <b id="rp-rmse">-</b></span>
-        <span>Reward, Eq. (1) <b id="rp-rew">-</b></span>
-      </div>
+      <div class="rp-stats" aria-live="off"><span class="sw" id="rp-sw"></span>EV <b id="rp-k">-</b> of <span id="rp-n">-</span>
+        &middot; Max-Min <b id="rp-mm">-</b> &middot; RMSE <b id="rp-rmse">-</b> &middot; Reward <b id="rp-rew">-</b></div>
+    </div>
+    <div id="ev"></div>
+  </div>
+  <div class="panel side-panel">
+    <div class="label" id="you-label">Your game</div>
+    <div class="stats">
+      <span>Max-Min load (lower is better)</span><b id="s-mm">-</b>
+      <span>Peak</span><b id="s-peak">-</b>
+      <span>RMSE</span><b id="s-rmse">-</b>
+      <span>Reward, Eq. (1)</span><b id="s-rew">-</b>
+      <span>EV</span><b id="s-ev">-</b>
+      <span>Moves left</span><b id="s-moves">-</b>
+    </div>
+    <div class="label">References on this instance</div>
+    <div class="stats" id="bench"></div>
+    <div class="row">
+      <button id="watch" title="Watch replays (W)" aria-expanded="false">Watch replays</button>
+      <button id="refs" title="Show references (O)" aria-pressed="false">Show references</button>
     </div>
     <div class="pad" id="pad" aria-label="Move pad">
       <button data-act="left" title="Left">&larr;</button>
       <button data-act="down" class="primary" title="Drop">&darr;</button>
       <button data-act="right" title="Right">&rarr;</button>
     </div>
-  </div>
-  <div class="panel side-panel">
-    <div class="label" id="you-label">Your schedule</div>
-    <div class="stats">
-      <span>EV</span><b id="s-ev">-</b>
-      <span>Max-Min load</span><b id="s-mm">-</b>
-      <span>Peak load</span><b id="s-peak">-</b>
-      <span>RMSE</span><b id="s-rmse">-</b>
-      <span>Reward, Eq. (1)</span><b id="s-rew">-</b>
-      <span>Drop here</span><b id="s-prev">-</b>
-      <span>Moves left</span><b id="s-moves">-</b>
-    </div>
-    <div class="label">Same EVs, full day (Max-Min / RMSE)</div>
-    <div class="stats" id="bench"></div>
-    <div class="row"><button id="watch">Watch replays (V)</button></div>
-    <div class="reveal" id="reveal" hidden role="alertdialog" aria-labelledby="reveal-text">
-      <span id="reveal-text">Your game is not over. A replay shows the EVs still to come on this seed.</span>
-      <div class="row"><button id="reveal-yes" class="primary">Reveal and watch (V)</button><button id="reveal-no">Cancel (Esc)</button></div>
-    </div>
     <div class="help">
       <p><b>Keys</b>: <kbd>&larr;</kbd><kbd>&rarr;</kbd> shift the block one slot (15 min) inside its window,
-         <kbd>&darr;</kbd>, <kbd>Space</kbd> or <kbd>Enter</kbd> drop it. After 96 shifts it drops by itself.
-         <kbd>1</kbd>-<kbd>5</kbd> level, <kbd>N</kbd> new seed, <kbd>R</kbd> restart, <kbd>V</kbd> replays.</p>
-      <p><b>Replays</b> (after the game, or before it once you confirm): <kbd>Space</kbd> play/pause,
-         <kbd>&larr;</kbd><kbd>&rarr;</kbd> one EV back/forward, <kbd>Home</kbd>/<kbd>End</kbd> first/last,
-         <kbd>-</kbd>/<kbd>+</kbd> speed, <kbd>P</kbd> next policy, <kbd>Esc</kbd> back to your game.</p>
+         <kbd>&darr;</kbd>, <kbd>Space</kbd> or <kbd>Enter</kbd> drop it (after 96 shifts it drops by itself);
+         <kbd>1</kbd>-<kbd>5</kbd> level, <kbd>N</kbd> new seed, <kbd>R</kbd> restart, <kbd>W</kbd> watch replays,
+         <kbd>O</kbd> show references. In a replay: <kbd>Space</kbd> or <kbd>K</kbd> play/pause,
+         <kbd>&larr;</kbd><kbd>&rarr;</kbd> one EV back/forward (<kbd>Shift</kbd>: 10), <kbd>Home</kbd>/<kbd>End</kbd>
+         start/end, <kbd>&uarr;</kbd><kbd>&darr;</kbd> previous/next replay, <kbd>-</kbd>/<kbd>+</kbd> slower/faster,
+         <kbd>Esc</kbd> or <kbd>W</kbd> close.</p>
       <p>The block falls column by column: each slot it covers gains one unit of load. Red columns are outside the EV's
          window. A slot cannot exceed the capacity (red line at the top); if an EV has no place left, the game ends.
-         On the four scenarios the scale is squeezed in the grey band under the capacity line, so that one unit is
-         taller on the rest of the board. There is no undo: as in the online problem, a decision is final.</p>
-      <p><b>Benchmarks</b> (online, from Section 6.2 of the paper): current practice starts charging on arrival.
-         Greedy starts each EV where the sum of loads under the block is smallest (Chau et al. 2023). Row-filling
-         takes the lowest row, then the leftmost start, where the block fits (Zhang et al. 2019).
+         The load already placed is grey, the EV dropped last is blue. On the four scenarios the scale is squeezed in
+         the grey band under the capacity line, so that one unit is taller on the rest of the board. There is no undo:
+         as in the online problem, a decision is final.</p>
+      <p><b>References</b> (online heuristics from Section 6.2 of the paper, on the same EVs; <i>Show references</i>
+         draws the load each one ends the day with, and a click on a row shows or hides its line).
+         Current practice starts charging on arrival.
+         Greedy starts each EV where the sum of loads under the block is smallest (Chau et al. 2023).
+         Row-filling takes the lowest row, then the leftmost start, where the block fits (Zhang et al. 2019).
          The &alpha;- and &beta;-thresholds start an EV on arrival if fewer than X EVs charge in that slot, and use
          Row-filling otherwise; X is the mean load per slot (&alpha;) or the mean peak of the full-information optimum
          (&beta;) on 100 simulated days.</p>
     </div>
-    <details class="paper" id="paper"><summary id="paper-sum">Paper averages</summary><div id="paper-body"></div></details>
+    <details class="paper" id="paper"><summary>Paper's reported averages (paper instances, not this one)</summary><div id="paper-body"></div></details>
   </div>
 </main>
 <footer>
   Game from: Ghahtarani A, Cousineau M, Farahmand A-m, Mendoza JE (2026) Press Start to Charge: Gamifying the Online
   Centralized Charging Scheduling Problem. Under revision at <i>INFORMS Journal on Computing</i>. arXiv:2601.12543.
   Arrival patterns follow the paper's four scenarios (EC Appendix D); the warm-up level is not from the paper.
+  This browser version is for human play; the assumptions are listed in
+  <a href="https://github.com/martincousi/press-start-to-charge/blob/main/README.md">README.md</a>.
 </footer>
 <script src="engine.js"></script>
 <script src="paper.js"></script>

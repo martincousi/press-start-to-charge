@@ -5,7 +5,10 @@
   const $ = id => document.getElementById(id);
   const board = $("board");
   const LEVELS = ["warmup", "s1", "s2", "s3", "s4"];
-  const BENCH = ["current", "greedy", "rowfill", "alpha", "beta"];   // benchmark policies shown and replayable
+  const BENCH = ["current", "greedy", "rowfill", "alpha", "beta"];   // reference heuristics, in the order of the grid
+  // Colours of the references in the stats grid, the overlay and the replays (Okabe-Ito, in the conventional order
+  // of use after the optimum's #0072B2, which this game does not have: no optimum is computed per instance).
+  const REF_COLOR = { current: "#E69F00", greedy: "#CC79A7", rowfill: "#009E73", alpha: "#56B4E9", beta: "#D55E00" };
   const SPEEDS = [1, 2, 5, 10, 20, 50];                              // replay speeds, EVs per second
   // Canvas geometry, in logical pixels (the canvas is drawn at the screen's resolution and scaled):
   // y-axis labels on the left, action area on top, plot below. When the vertical axis stops below the
@@ -13,7 +16,9 @@
   const W = 820, H = 580, X0 = 40, CW = 8, AY = 4, AH = 26, YT = 40, YB = H - 34, BAND = 40;
 
   let key = "warmup", seed = 1, inst = null, game = null, bench = null, scale = null;
-  let mode = "play", revealed = false, rp = null, speedIx = 2;
+  let mode = "play", rp = null, speedIx = 2;
+  let refsOn = false;                                                  // references overlay shown
+  const refSel = { current: true, greedy: true, rowfill: true, alpha: true, beta: true };   // lines in the overlay
 
   function readHash() {
     const m = /^#(warmup|s[1-4])-(\d+)$/.exec(location.hash);
@@ -22,7 +27,7 @@
   function writeHash() { try { history.replaceState(null, "", "#" + key + "-" + seed); } catch (e) { /* ignore */ } }
 
   function newGame() {
-    stopReplay(); mode = "play"; revealed = false; hideReveal();
+    stopReplay(); mode = "play"; refsOn = false;
     inst = C.generate(key, seed);
     game = new C.Game(inst);
     bench = {};
@@ -66,30 +71,36 @@
     render();
   }
 
+  // ---------------------------------------------------------------- references overlay
+  // Replays and references work at any time, also during a game (they show the EVs still to come; the owner
+  // chose this for class use). They do not change the game: closing or hiding them returns to it as it was.
+  function toggleRefs() { refsOn = !refsOn; render(); }
+  // a row of the references grid shows or hides that reference's line (and opens the overlay if it is closed)
+  function toggleRef(p) {
+    if (!refsOn) { refSel[p] = true; refsOn = true; } else refSel[p] = !refSel[p];
+    render();
+  }
+
   // ---------------------------------------------------------------- replays
-  // A replay re-steps a policy's recorded actions through the engine (C.Replay); frame k shows the board
-  // after k EVs, with EV k arriving at the start the policy gives it. Replays reveal the EVs still to come,
-  // so they open by themselves once the game is over, and before that only after an explicit confirmation.
-  const unlocked = () => game.done || revealed;
-  function replayChoices() { return (game.done ? ["you"] : []).concat(BENCH); }
-  function policyName(p) { return p === "you" ? "You" : C.POLICY_NAMES[p]; }
+  // A replay re-steps recorded actions through the engine (C.Replay): your moves so far, or a reference's
+  // schedule. Frame k shows the board after k EVs, with EV k arriving at the start the policy gives it.
+  const CHOICES = ["you"].concat(BENCH);
+  function policyName(p) { return p === "you" ? "Your game" : C.POLICY_NAMES[p]; }
+  function toggleWatch() { if (mode === "replay") closeReplay(); else openReplay(); }
 
   function openReplay(policy) {
-    if (!unlocked()) { showReveal(); return; }
-    hideReveal();
     mode = "replay";
-    const choices = replayChoices();
-    if (!policy || !choices.includes(policy)) policy = rp && choices.includes(rp.policy) ? rp.policy : (game.done ? "you" : "greedy");
-    $("rp-policy").innerHTML = choices.map(p => `<option value="${p}">${policyName(p)}</option>`).join("");
+    if (!policy) policy = rp ? rp.policy : (game.done ? "you" : "greedy");
+    $("rp-watch").innerHTML = CHOICES.map(p => `<option value="${p}">Watch: ${policyName(p)}</option>`).join("");
     loadReplay(policy);
-    $("rp-play").focus();   // Space then plays (a focused "Watch" button would otherwise take it)
+    $("rp-play").focus();   // Space then plays (a focused "Watch replays" button would otherwise take it)
   }
   function loadReplay(policy) {
     stopReplay();
     const actions = policy === "you" ? game.history : bench[policy].history;
     const R = new C.Replay(inst, actions);
     rp = { policy, R, k: 0, g: R.gameAt(0), playing: false, timer: null };
-    $("rp-policy").value = policy;
+    $("rp-watch").value = policy;
     $("rp-scrub").max = String(R.placed);
     render();
   }
@@ -124,12 +135,10 @@
     if (rp && rp.playing) { clearTimeout(rp.timer); rp.timer = setTimeout(tick, 1000 / SPEEDS[speedIx]); }
   }
   function cyclePolicy(d) {
-    const ch = replayChoices(), i = ch.indexOf(rp.policy);
-    loadReplay(ch[(i + d + ch.length) % ch.length]);
+    const i = CHOICES.indexOf(rp.policy);
+    loadReplay(CHOICES[(i + d + CHOICES.length) % CHOICES.length]);
   }
-  function exitReplay() { stopReplay(); mode = "play"; render(); }
-  function showReveal() { $("reveal").hidden = false; $("reveal-yes").focus(); }
-  function hideReveal() { $("reveal").hidden = true; }
+  function closeReplay() { stopReplay(); mode = "play"; render(); }
 
   // ---------------------------------------------------------------- drawing
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -155,7 +164,7 @@
     const ctx = board.getContext("2d"), cap = inst.cap, S = scale, y = S.y, rh = S.rh;
     fitCanvas(ctx);
     const col = { bg: css("--bg"), fg: css("--fg"), muted: css("--muted"), line: css("--line"), accent: css("--accent"),
-                  accentFg: css("--accent-fg"), bad: css("--bad"), ok: css("--ok"), a: css("--cell-a"), b: css("--cell-b"),
+                  accentFg: css("--accent-fg"), bad: css("--bad"), ok: css("--ok"), cell: css("--cell"),
                   surface: css("--surface") };
     ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = col.bg; ctx.fillRect(0, 0, W, H);
@@ -180,20 +189,17 @@
     for (let v = tick; v < S.ymax; v += tick) { const yy = Math.round(y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(X0, yy); ctx.lineTo(xs(inst.T), yy); ctx.stroke(); }
     if (S.band) { ctx.strokeStyle = col.muted; ctx.beginPath(); ctx.moveTo(X0, S.ym + 0.5); ctx.lineTo(xs(inst.T), S.ym + 0.5); ctx.stroke(); }
 
-    // placed charging, one unit per EV per slot; the last placed EV in the accent colour.
-    // In the compressed band the units are drawn without gaps, in a darker colour so that the overflow shows.
+    // placed charging, one unit per EV per slot, all in one neutral colour; only the EV placed last (in a
+    // replay: the EV just placed) is in the accent colour. In the compressed band the units have no gaps.
     const lastId = g.i - 1, gap = rh >= 4 ? 1 : 0;
     for (let j = 0; j < inst.T; j++) {
       const st = g.stacks[j];
       for (let k = 0; k < st.length; k++) {
-        const inBand = S.band && k >= S.ymax;
-        ctx.fillStyle = st[k] === lastId ? col.accent : inBand ? col.fg : (st[k] % 2 ? col.a : col.b);
+        const inBand = S.band && k >= S.ymax, last = st[k] === lastId;
+        ctx.fillStyle = last ? col.accent : col.cell;
         const top = y(k + 1), h = y(k) - top;
-        if (inBand) {
-          ctx.globalAlpha = st[k] === lastId ? 1 : 0.6;
-          ctx.fillRect(xs(j) + 0.5, top, CW - 1, st[k] === lastId ? Math.max(2, h) : h);
-          ctx.globalAlpha = 1;
-        } else ctx.fillRect(xs(j) + 0.5, top, CW - 1, Math.max(1, h - gap));
+        if (inBand) ctx.fillRect(xs(j) + 0.5, top, CW - 1, last ? Math.max(2, h) : h);
+        else ctx.fillRect(xs(j) + 0.5, top, CW - 1, Math.max(1, h - gap));
       }
     }
 
@@ -233,6 +239,7 @@
       ctx.beginPath(); ctx.moveTo(X0, yy); ctx.lineTo(xs(inst.T), yy); ctx.stroke();
     }
     ctx.setLineDash([]);
+    if (refsOn) drawRefs(ctx, col);
 
     // axes: ticks up to ymax; the capacity at the top; a zigzag where the axis is compressed
     ctx.fillStyle = col.muted; ctx.font = "11px Inter, system-ui, sans-serif"; ctx.textBaseline = "middle"; ctx.textAlign = "right";
@@ -248,21 +255,49 @@
       ctx.fillStyle = col.muted; ctx.textAlign = "left";
       boxText(ctx, `compressed: ${S.ymax} to ${cap}`, X0 + 6, (YT + S.ym) / 2 + 5, col.surface);
     }
+    // labels in the band: "compressed" on the left and "capacity" on the right, where current practice (the only
+    // reference that goes above ymax) is low, so that they rarely hide its line in the band
     ctx.textAlign = "left"; ctx.fillStyle = col.bad;
-    if (S.band) boxText(ctx, "capacity " + cap, X0 + 140, (YT + S.ym) / 2 + 5, col.surface);
-    else ctx.fillText("capacity " + cap, X0 + 4, YT + 9);
+    const capText = "capacity " + cap, capW = ctx.measureText(capText).width;
+    if (S.band) boxText(ctx, capText, xs(inst.T) - 6 - capW, (YT + S.ym) / 2 + 5, col.surface);
+    else ctx.fillText(capText, X0 + 4, YT + 9);
     ctx.fillStyle = col.fg; ctx.textAlign = "right";
-    ctx.fillText("max " + mx, xs(inst.T) - 2, Math.round(y(mx)) - 7);
+    // the replay's name sits at the top right of the plot, under the band: the max label moves left of it if needed
+    const rpText = mode === "replay" && rp ? "Watching: " + policyName(rp.policy) : null, rpY = S.ym + (S.band ? 14 : 26);
+    ctx.font = "600 13px Inter, system-ui, sans-serif";
+    const rpW = rpText ? ctx.measureText(rpText).width : 0;
+    ctx.font = "11px Inter, system-ui, sans-serif";
+    const maxY = Math.round(y(mx)) - 7;
+    ctx.fillText("max " + mx, xs(inst.T) - 2 - (S.band && mx > S.ymax ? capW + 14 : rpText && Math.abs(maxY - rpY) < 16 ? rpW + 14 : 0), maxY);
     if (mx !== mn) ctx.fillText("min " + mn, xs(inst.T) - 2, Math.round(y(mn)) - 7);
     ctx.fillStyle = col.muted; ctx.textAlign = "center"; ctx.textBaseline = "top";
     for (let j = 0; j <= inst.T; j += 16) ctx.fillText(C.slotClock(j), Math.min(Math.max(xs(j), X0 + 14), xs(inst.T) - 14), YB + 12);
     ctx.textAlign = "left"; ctx.fillText("EVs", 2, YT - 14);
-    if (mode === "replay" && rp) {
+    if (rpText) {   // top right of the plot: late in the morning the load is low for every policy
       ctx.textAlign = "left"; ctx.fillStyle = col.accent; ctx.font = "600 13px Inter, system-ui, sans-serif";
-      boxText(ctx, "Replay: " + policyName(rp.policy), X0 + 330, S.band ? (YT + S.ym) / 2 + 5 : YT + 10, S.band ? col.surface : col.bg);
+      boxText(ctx, rpText, xs(inst.T) - 6 - rpW, rpY, col.bg);
     }
 
     panel();
+  }
+
+  // References: the load each heuristic ends the day with, as a step line on the same (compressed) scale as the
+  // board: y() is the board's own mapping, so a line above ymax lies in the grey band exactly where a bar of that
+  // load ends. A halo in the background colour under every line keeps the lines readable over the bars.
+  function refPath(ctx, loads) {
+    ctx.beginPath();
+    for (let j = 0; j < inst.T; j++) {
+      const yy = scale.y(loads[j]);
+      if (j === 0) ctx.moveTo(xs(0), yy); else ctx.lineTo(xs(j), yy);
+      ctx.lineTo(xs(j + 1), yy);
+    }
+  }
+  function drawRefs(ctx, col) {
+    const shown = BENCH.filter(p => refSel[p]);
+    ctx.globalAlpha = 0.85; ctx.strokeStyle = col.bg; ctx.lineWidth = 5;
+    for (const p of shown) { refPath(ctx, bench[p].loads); ctx.stroke(); }
+    ctx.globalAlpha = 1; ctx.lineWidth = 2;
+    for (const p of shown) { ctx.strokeStyle = REF_COLOR[p]; refPath(ctx, bench[p].loads); ctx.stroke(); }
   }
 
   // left-aligned text on a small box of the background colour, so that the dashed max line does not cross it
@@ -281,46 +316,51 @@
   }
 
   function benchList() {
-    $("bench").innerHTML = BENCH.map(p => `<span id="n-${p}">${C.POLICY_NAMES[p]}</span><b id="s-${p}">-</b>`).join("");
+    $("bench").innerHTML = `<span></span><span class="head">Max-Min / RMSE</span>` + BENCH.map(p =>
+      `<button class="ref" id="n-${p}" aria-pressed="true" title="Show or hide this line on the board">` +
+      `<span class="sw" style="background:${REF_COLOR[p]};border-color:${REF_COLOR[p]}"></span>${C.POLICY_NAMES[p]}</button>` +
+      `<b id="s-${p}">-</b>`).join("");
+    for (const p of BENCH) $("n-" + p).addEventListener("click", () => toggleRef(p));
   }
 
   function panel() {
     const n = inst.evs.length, ev = game.ev, sc = C.score(inst, game.starts), inReplay = mode === "replay" && rp;
-    $("s-ev").textContent = game.done ? (game.failed ? (game.i + 1) + " / " + n : n + " / " + n) : (game.i + 1) + " / " + n;
     $("s-mm").textContent = sc.maxMin;
     $("s-peak").textContent = sc.peak + " (capacity " + inst.cap + ")";
     $("s-rmse").textContent = sc.rmse.toFixed(2);
     $("s-rew").textContent = fmtR(game.rewardSum);
-    $("you-label").textContent = revealed && !game.done ? "Your schedule (replays seen before the end)" : "Your schedule";
+    $("s-ev").textContent = game.failed ? `${game.i + 1} of ${n} (overload)` : `${game.done ? n : game.i + 1} of ${n}`;
+    $("s-moves").textContent = ev ? String(game.maxMoves - game.moves) : "-";
     for (const p of BENCH) {
       $("s-" + p).textContent = fmtBench(bench[p]);
-      const on = inReplay && rp.policy === p;
-      $("s-" + p).classList.toggle("on", !!on); $("n-" + p).classList.toggle("on", !!on);
+      const on = !!(inReplay && rp.policy === p);
+      $("s-" + p).classList.toggle("on", on); $("n-" + p).classList.toggle("on", on);
+      $("n-" + p).setAttribute("aria-pressed", String(refSel[p]));
     }
-    $("watch").textContent = mode === "replay" ? "Back to my game (Esc)" :
-      unlocked() ? "Watch replays (V)" : "Watch replays (V): reveals the EVs to come";
+    $("watch").setAttribute("aria-expanded", String(mode === "replay"));
+    $("refs").textContent = refsOn ? "Hide references" : "Show references";
+    $("refs").setAttribute("aria-pressed", String(refsOn));
+    $("refs").title = refsOn ? "Hide references (O)" : "Show references (O): the load each reference heuristic ends the day with";
     $("pad").hidden = mode === "replay"; $("replay-bar").hidden = mode !== "replay";
 
     if (inReplay) { replayPanel(); return; }
     if (ev) {
-      const s = game.pos, ok = game.fits(s);
-      if (ok) {
-        const p = game.preview(s);
-        $("s-prev").textContent = "Max-Min " + p.maxMin + ", reward " + fmtR(p.reward);
-      } else $("s-prev").textContent = "over capacity";
-      $("s-moves").textContent = String(game.maxMoves - game.moves);
+      const s = game.pos;
       $("ev").textContent = `EV ${game.i + 1} of ${n}: arrives ${C.timeClock(ev.arrival)}, leaves ${C.timeClock(ev.departure)}, ` +
         `needs ${fmtDur(ev.l)}. Charging ${C.slotClock(s)} to ${C.slotClock(s + ev.l)}.`;
-      flash("Arrow keys shift the block; down arrow, Space or Enter drop it.");
+      if (game.fits(s)) {
+        const p = game.preview(s);
+        flash(`Shift the block with ← →, drop it with ↓, Space or Enter (here: Max-Min ${p.maxMin}, reward ${fmtR(p.reward)}).`);
+      } else flash("Over capacity here: shift the block with ← → before dropping it.");
     } else {
-      $("s-prev").textContent = "-"; $("s-moves").textContent = "-";
       $("ev").textContent = "";
       if (game.failed) flash(`Overload: EV ${game.i + 1} cannot be charged without exceeding the capacity. Game over. ` +
-        `V to watch replays, R to restart.`);
+        `W to watch replays, O to show references, R to restart.`);
       else {
         const gr = C.score(inst, bench.greedy.starts).maxMin;
         const cmp = sc.maxMin < gr ? "better than" : sc.maxMin === gr ? "equal to" : "worse than";
-        flash(`Done. Your Max-Min is ${sc.maxMin}, ${cmp} Greedy (${gr}). V to watch replays, R to restart, N for a new seed.`);
+        flash(`Done. Your Max-Min is ${sc.maxMin}, ${cmp} Greedy (${gr}). W to watch replays, O to show references, ` +
+          `R to restart, N for a new seed.`);
       }
     }
   }
@@ -328,11 +368,13 @@
   function replayPanel() {
     const R = rp.R, k = rp.k, f = R.frames[k], n = inst.evs.length, name = policyName(rp.policy);
     $("rp-scrub").value = String(k);
-    $("rp-scrub").setAttribute("aria-valuetext", `${k} of ${R.placed} EVs placed`);
-    $("rp-play").innerHTML = rp.playing ? ICON.pause : ICON.play;
-    $("rp-play").setAttribute("aria-label", rp.playing ? "Pause (Space)" : "Play (Space)");
-    $("rp-play").title = rp.playing ? "Pause (Space)" : "Play (Space)";
-    $("rp-k").textContent = `${k} / ${n}`;
+    $("rp-scrub").setAttribute("aria-valuetext", `${k} of ${n} EVs placed`);
+    const lab = rp.playing ? "Pause (Space or K)" : "Play (Space or K)";
+    $("rp-play").textContent = rp.playing ? "\u275A\u275A Pause" : "\u25B6 Play";
+    $("rp-play").setAttribute("aria-label", lab); $("rp-play").title = lab;
+    $("rp-sw").style.background = rp.policy === "you" ? css("--accent") : REF_COLOR[rp.policy];
+    $("rp-k").textContent = String(k);
+    $("rp-n").textContent = String(n);
     $("rp-mm").textContent = f.maxMin;
     $("rp-rmse").textContent = f.rmse.toFixed(2);
     $("rp-rew").textContent = fmtR(f.rewardSum) + (f.lastReward === null || k === 0 ? "" : ` (last ${fmtR(f.lastReward)})`);
@@ -342,22 +384,22 @@
         `needs ${fmtDur(ev.l)}; charged ${C.slotClock(s)} to ${C.slotClock(s + ev.l)}.`;
     } else if (f.failed) {
       $("ev").textContent = `${name}: overload at EV ${k + 1}, which has no start under the capacity.`;
+    } else if (k < n) {
+      $("ev").textContent = `${name}: ${k} of ${n} EVs placed so far.`;
     } else {
       $("ev").textContent = `${name}: all ${n} EVs placed. Max-Min ${f.maxMin}, RMSE ${f.rmse.toFixed(2)}, cumulative reward ${fmtR(f.rewardSum)}.`;
     }
-    flash("Replay: Space play/pause, ← → one EV, Home/End, - + speed, P policy, Esc back to your game.");
+    flash(`Watching ${name}: Space plays or pauses, ← → step, ↑ ↓ change the replay, Esc closes.`);
   }
 
   // ---------------------------------------------------------------- paper averages
   function paperTable() {
     const box = $("paper");
     if (!P || !P.ROWS[key]) {
-      $("paper-sum").textContent = "Paper averages";
       $("paper-body").innerHTML = "<p>The warm-up level is not in the paper.</p>";
       return;
     }
-    $("paper-sum").textContent = `Paper averages, ${C.SCENARIOS[key].name} (${P.TABLE[key]})`;
-    let html = `<p>Means over the paper's 100 test instances of ${C.SCENARIOS[key].name}, not this seed: our instances come
+    let html = `<p>${C.SCENARIOS[key].name} (${P.TABLE[key]}): means over the paper's 100 test instances, not this seed: our instances come
       from our own generator. Bold: heuristics also run on this page.</p><table><thead><tr><th>Method</th><th>Max-Min</th>
       <th>RMSE</th></tr></thead><tbody>`;
     let fam = null;
@@ -377,32 +419,28 @@
   }
 
   // ---------------------------------------------------------------- input
-  const ICON = {
-    play: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M4 2.5v11l9-5.5z" fill="currentColor"/></svg>',
-    pause: '<svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3.5 2.5h3v11h-3zM9.5 2.5h3v11h-3z" fill="currentColor"/></svg>',
-  };
   document.addEventListener("keydown", ev => {
     if (ev.target.tagName === "A" && ev.key === "Enter") return;   // follow a focused link (site navigation)
     const tag = ev.target.tagName;
     if (tag === "INPUT" || tag === "SELECT") { if (ev.key === "Escape") ev.target.blur(); return; }
     if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-    const k = ev.key, onButton = tag === "BUTTON" && (k === " " || k === "Enter");
-    if (mode === "replay") {
-      const m = { " ": toggle, k: toggle, K: toggle, ArrowLeft: () => seek(rp.k - 1), ArrowRight: () => seek(rp.k + 1),
-                  Home: () => seek(0), End: () => seek(rp.R.placed), "-": () => setSpeed(speedIx - 1), "[": () => setSpeed(speedIx - 1),
+    const k = ev.key;
+    if (tag === "BUTTON" && (k === " " || k === "Enter")) return;   // let a focused button act
+    // W and O everywhere (V: the old key for the replays, kept as a silent alias of W)
+    if (k === "w" || k === "W" || k === "v" || k === "V") { ev.preventDefault(); toggleWatch(); return; }
+    if (k === "o" || k === "O") { ev.preventDefault(); toggleRefs(); return; }
+    if (mode === "replay") {   // keys act on the replay only
+      const st = ev.shiftKey ? 10 : 1;
+      const m = { " ": toggle, k: toggle, K: toggle, ArrowLeft: () => seek(rp.k - st), ArrowRight: () => seek(rp.k + st),
+                  Home: () => seek(0), End: () => seek(rp.R.placed), ArrowUp: () => cyclePolicy(-1), ArrowDown: () => cyclePolicy(1),
+                  "-": () => setSpeed(speedIx - 1), "_": () => setSpeed(speedIx - 1), "[": () => setSpeed(speedIx - 1),
                   "+": () => setSpeed(speedIx + 1), "=": () => setSpeed(speedIx + 1), "]": () => setSpeed(speedIx + 1),
-                  p: () => cyclePolicy(1), P: () => cyclePolicy(-1), Escape: exitReplay, v: exitReplay, V: exitReplay };
-      if (m[k] && !onButton) { ev.preventDefault(); m[k](); return; }
-      if (onButton) return;
-    } else {
-      const map = { ArrowLeft: "left", ArrowRight: "right", ArrowDown: "down", " ": "down", Enter: "down" };
-      if (map[k]) {
-        if (onButton) return;   // let a focused button act
-        ev.preventDefault(); act(map[k]); return;
-      }
-      if (k === "v" || k === "V") { if (!$("reveal").hidden) revealed = true; openReplay(); return; }   // second V confirms
-      if (k === "Escape") { hideReveal(); return; }
+                  Escape: closeReplay };
+      if (m[k]) { ev.preventDefault(); m[k](); }
+      return;
     }
+    const map = { ArrowLeft: "left", ArrowRight: "right", ArrowDown: "down", " ": "down", Enter: "down" };
+    if (map[k]) { ev.preventDefault(); act(map[k]); return; }
     if (k === "r" || k === "R") newGame();
     else if (k === "n" || k === "N") { seed += 1; newGame(); }
     else if (k >= "1" && k <= String(LEVELS.length)) { key = LEVELS[+k - 1]; newGame(); }
@@ -413,16 +451,15 @@
   $("newseed").addEventListener("click", () => { seed += 1; newGame(); });
   $("level").addEventListener("change", () => { key = $("level").value; newGame(); $("level").blur(); });
   $("seed").addEventListener("change", () => { seed = Math.max(1, Math.floor(+$("seed").value) || 1); newGame(); });
-  $("watch").addEventListener("click", () => mode === "replay" ? exitReplay() : openReplay());
-  $("reveal-yes").addEventListener("click", () => { revealed = true; openReplay(); });
-  $("reveal-no").addEventListener("click", hideReveal);
-  $("rp-policy").addEventListener("change", () => { loadReplay($("rp-policy").value); $("rp-policy").blur(); });
+  $("watch").addEventListener("click", toggleWatch);
+  $("refs").addEventListener("click", toggleRefs);
+  $("rp-watch").addEventListener("change", () => { loadReplay($("rp-watch").value); $("rp-watch").blur(); });
   $("rp-play").addEventListener("click", toggle);
-  $("rp-first").addEventListener("click", () => seek(0));
+  $("rp-start").addEventListener("click", () => seek(0));
   $("rp-back").addEventListener("click", () => seek(rp.k - 1));
   $("rp-fwd").addEventListener("click", () => seek(rp.k + 1));
-  $("rp-last").addEventListener("click", () => seek(rp.R.placed));
-  $("rp-exit").addEventListener("click", exitReplay);
+  $("rp-end").addEventListener("click", () => seek(rp.R.placed));
+  $("rp-close").addEventListener("click", closeReplay);
   $("rp-speed").addEventListener("change", () => { setSpeed(+$("rp-speed").value); $("rp-speed").blur(); });
   $("rp-scrub").addEventListener("input", () => { const k = +$("rp-scrub").value; stopReplay(); seek(k); });
   if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => game && render());
@@ -438,6 +475,7 @@
   newGame();
 
   // hooks for the node smoke test (test/ui_smoke.js); harmless in a browser
-  window.__charge = { state: () => ({ mode, key, seed, inst, game, bench, scale, rp, revealed, speed: SPEEDS[speedIx] }),
-                      seek, play, pause, openReplay, loadReplay, exitReplay, newGame };
+  window.__charge = { state: () => ({ mode, key, seed, inst, game, bench, scale, rp, refsOn, refSel,
+                                      speed: SPEEDS[speedIx] }),
+                      seek, play, pause, openReplay, loadReplay, closeReplay, newGame, REF_COLOR, Y: { YT, YB, AY, AH } };
 })();
